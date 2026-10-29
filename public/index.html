@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Raio-X da Função: um exame da sua semana de trabalho</title>
+  <meta name="description" content="Um agente de IA faz a anamnese da sua rotina, emite um laudo com as horas que a IA pode assumir e prescreve o fluxo pronto para importar no n8n." />
+  <link rel="preload" href="fontes/archivo-latin-wdth-normal.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="timbre">
+    <div class="timbre-marca">
+      <svg class="cruz" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 2h6v7h7v6h-7v7H9v-7H2V9h7z"/></svg>
+      <div>
+        <strong>Raio-X da Função</strong>
+        <span>Diagnóstico de rotina por inteligência artificial</span>
+      </div>
+    </div>
+    <a class="timbre-link" href="https://github.com/thalitadevops/raio-x-da-funcao" target="_blank" rel="noopener">Ver o código</a>
+  </header>
+
+  <main>
+    <!-- 1. Início -->
+    <section id="tela-inicio" class="tela ativa">
+      <div class="abertura">
+        <div class="abertura-texto">
+          <h1>Tire um raio-x da sua semana de trabalho.</h1>
+          <p class="sub">Responda algumas perguntas sobre sua rotina. Em cinco minutos você recebe o laudo: quais tarefas a IA pode assumir, quantas horas isso devolve e o fluxo pronto para importar no n8n.</p>
+        </div>
+        <figure class="negatoscopio negatoscopio-mini" aria-label="Exemplo de chapa: tarefas de um analista de atendimento">
+          <div id="chapa-exemplo"></div>
+          <figcaption>Chapa de exemplo. O que brilha é o tempo que a IA pode assumir.</figcaption>
+        </figure>
+      </div>
+
+      <form id="form-perfil" class="ficha">
+        <div class="ficha-cabeca">
+          <h2>Ficha do paciente</h2>
+          <span class="ficha-num" id="num-exame"></span>
+        </div>
+        <label class="campo">
+          <span>Cargo</span>
+          <input name="cargo" required maxlength="120" placeholder="analista de atendimento" autocomplete="organization-title" />
+        </label>
+        <label class="campo">
+          <span>Área ou empresa</span>
+          <input name="area" maxlength="160" placeholder="suporte a restaurantes em app de delivery" />
+        </label>
+        <label class="campo">
+          <span>Ferramentas de uso diário <em>(opcional)</em></span>
+          <input name="ferramentas" maxlength="300" placeholder="Gmail, Sheets, Slack, Zendesk" />
+        </label>
+        <div class="acoes">
+          <button type="submit" class="botao">Começar a anamnese</button>
+        </div>
+        <div class="exemplos">
+          <span>Ou veja um exame de exemplo:</span>
+          <button type="button" class="botao-texto" data-demo="atendimento">Atendimento a restaurantes</button>
+          <button type="button" class="botao-texto" data-demo="logistica">Operações com entregadores</button>
+          <button type="button" class="botao-texto" data-demo="comercial">Comercial de novos restaurantes</button>
+        </div>
+        <p class="nota">As respostas servem só para gerar o laudo e não ficam guardadas.</p>
+      </form>
+    </section>
+
+    <!-- 2. Anamnese -->
+    <section id="tela-entrevista" class="tela">
+      <div class="ficha ficha-anamnese">
+        <div class="ficha-cabeca">
+          <h2>Anamnese</h2>
+          <span class="ficha-num" id="rotulo-perfil"></span>
+        </div>
+        <div class="progresso" aria-live="polite">
+          <span id="contador">Pergunta 1</span>
+          <div class="regua"><div id="barra-progresso"></div></div>
+        </div>
+
+        <ol id="conversa" class="conversa" aria-live="polite"></ol>
+
+        <form id="form-resposta" class="caixa-resposta">
+          <label for="resposta" class="sr">Sua resposta</label>
+          <textarea id="resposta" rows="3" maxlength="3000" placeholder="Escreva aqui…" required></textarea>
+          <div class="acoes">
+            <button type="submit" class="botao" id="btn-enviar">Responder</button>
+            <button type="button" id="btn-finalizar" class="botao-texto" disabled>Já respondi o bastante, emitir o laudo</button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <!-- 3. Laudo -->
+    <section id="tela-relatorio" class="tela">
+      <article class="laudo" id="laudo">
+        <div class="laudo-cabeca">
+          <div>
+            <h2>Laudo</h2>
+            <p class="laudo-exame">Raio-X da Função</p>
+          </div>
+          <dl class="laudo-dados">
+            <div><dt>Paciente</dt><dd id="titulo-relatorio"></dd></div>
+            <div><dt>Exame nº</dt><dd id="laudo-num"></dd></div>
+            <div><dt>Data</dt><dd id="laudo-data"></dd></div>
+          </dl>
+        </div>
+
+        <figure class="negatoscopio">
+          <div id="chapa"></div>
+          <figcaption>Cada faixa é uma tarefa; o comprimento é o tempo semanal. A parte que brilha é o que a IA pode assumir.</figcaption>
+        </figure>
+
+        <section class="laudo-bloco">
+          <h3>Conclusão</h3>
+          <p class="conclusao">
+            Das <strong id="n-mapeadas">0h</strong> semanais mapeadas, a IA pode assumir
+            <strong class="realce" id="n-economia">0h</strong>, o equivalente a
+            <strong id="n-dias">0</strong> dias de trabalho devolvidos por mês.
+          </p>
+          <p id="resumo-funcao" class="resumo"></p>
+        </section>
+
+        <section class="laudo-bloco conduta">
+          <h3>Conduta recomendada</h3>
+          <p id="primeiro-passo"></p>
+        </section>
+
+        <section class="laudo-bloco">
+          <h3>Achados por tarefa</h3>
+          <div id="lista-tarefas" class="achados"></div>
+        </section>
+
+        <footer class="assinatura">
+          <div class="carimbo" aria-hidden="true">
+            <span>Laudo emitido por agente de IA</span>
+            <span>Claude · revisão humana recomendada</span>
+          </div>
+        </footer>
+      </article>
+
+      <div class="acoes acoes-laudo">
+        <button type="button" id="btn-imprimir" class="botao">Imprimir ou salvar em PDF</button>
+        <button type="button" id="btn-baixar-relatorio" class="botao-texto">Baixar em Markdown</button>
+        <button type="button" id="btn-recomecar" class="botao-texto">Fazer outro exame</button>
+      </div>
+    </section>
+  </main>
+
+  <!-- Receituário (fluxo n8n) -->
+  <dialog id="painel-fluxo" class="receita">
+    <div class="receita-topo">
+      <div>
+        <p class="receita-rx" aria-hidden="true">Rx</p>
+        <h3 id="fluxo-nome">Preparando a receita…</h3>
+      </div>
+      <button type="button" class="fechar" id="btn-fechar-fluxo" aria-label="Fechar receita">×</button>
+    </div>
+    <div id="fluxo-conteudo"></div>
+  </dialog>
+
+  <footer class="rodape">
+    Projeto de <a href="https://github.com/thalitadevops" target="_blank" rel="noopener">Thalita Santos das Neves</a>, feito com Claude API e Cloudflare Pages.
+  </footer>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
