@@ -1,7 +1,7 @@
 // POST /api/fluxo
 // Recebe uma tarefa do Raio-X e devolve o plano do fluxo de automação.
 // O navegador transforma esse plano em um workflow importável no n8n (public/n8n.js).
-import { chamarClaude, json, respostaDeErro, limitarTexto, ErroHttp } from "../../lib/anthropic.js";
+import { chamarComFerramenta, json, respostaDeErro, limitarTexto, ErroHttp } from "../../lib/anthropic.js";
 import { TIPOS_DE_GATILHO, TIPOS_DE_PASSO } from "../../public/n8n.js";
 
 const FERRAMENTA_FLUXO = {
@@ -67,12 +67,11 @@ Regras:
 - Use "ia_claude" para qualquer passo que precise ler, resumir, classificar ou escrever texto.
 - Seja específico na configuração de cada passo; escreva em português do Brasil.`;
 
-    const data = await chamarClaude(env, {
-      messages: [{ role: "user", content: pedido }],
-      tools: [FERRAMENTA_FLUXO],
-      tool_choice: { type: "tool", name: "montar_fluxo" },
-    });
-    const uso = data.content?.find((b) => b.type === "tool_use");
+    const { uso } = await chamarComFerramenta(
+      env,
+      { messages: [{ role: "user", content: pedido + "\n\nResponda chamando a ferramenta montar_fluxo." }], tools: [FERRAMENTA_FLUXO] },
+      "montar_fluxo"
+    );
     if (!uso) throw new ErroHttp(502, "O modelo não devolveu um fluxo.");
     return json({ plano: uso.input });
   } catch (err) {

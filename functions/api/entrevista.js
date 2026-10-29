@@ -1,9 +1,11 @@
 // POST /api/entrevista
 // Recebe o perfil e o histórico da conversa. Devolve a próxima pergunta
 // do agente ou, quando ele já tem informação suficiente, o Raio-X estruturado.
-import { chamarClaude, json, respostaDeErro, limitarTexto, ErroHttp } from "../../lib/anthropic.js";
+import { chamarClaude, chamarComFerramenta, json, respostaDeErro, limitarTexto, ErroHttp } from "../../lib/anthropic.js";
 
 const MAX_TURNOS = 24;
+// Depois de tantas respostas, o laudo é emitido mesmo que o agente queira perguntar mais.
+const RESPOSTAS_PARA_FECHAR = 7;
 
 const FERRAMENTA_RAIO_X = {
   name: "entregar_raio_x",
@@ -68,7 +70,7 @@ Como conduzir a entrevista:
 - Comece pedindo para a pessoa descrever um dia típico de trabalho.
 - Depois aprofunde nas tarefas repetitivas: com que frequência acontecem, quanto tempo levam, de onde vêm os dados, para onde vão, o que dá mais retrabalho.
 - Quando a pessoa der uma resposta vaga sobre tempo, peça uma estimativa em minutos ou horas.
-- Entre 5 e 8 perguntas costumam bastar. Quando souber as principais tarefas com frequência e tempo, chame a ferramenta entregar_raio_x.
+- Entre 5 e 7 perguntas costumam bastar; não passe de 7. Quando souber as principais tarefas com frequência e tempo, chame a ferramenta entregar_raio_x.
 - Seja realista no percentual automatizável: tarefas que exigem julgamento, negociação ou empatia raramente passam de 30%.
 - Nunca invente tarefas que a pessoa não mencionou.`;
 }
@@ -84,10 +86,12 @@ function validarMensagens(mensagens) {
 
 export async function onRequestPost({ request, env }) {
   try {
-    const { perfil = {}, mensagens = [], finalizar = false } = await request.json();
+    const { perfil = {}, mensagens = [], finalizar: pediuFinalizar = false } = await request.json();
     if (!perfil.cargo) throw new ErroHttp(400, "Informe o cargo.");
 
     const historico = validarMensagens(mensagens);
+    const respostas = historico.filter((m) => m.role === "user").length;
+    const finalizar = pediuFinalizar || respostas >= RESPOSTAS_PARA_FECHAR;
     // A API exige que a conversa comece com o usuário.
     const messages = [
       { role: "user", content: "Olá! Quero fazer o Raio-X da minha função." },
@@ -96,7 +100,7 @@ export async function onRequestPost({ request, env }) {
     if (finalizar) {
       messages.push({
         role: "user",
-        content: "Já respondi o suficiente. Por favor, entregue o Raio-X agora com o que você sabe.",
+        content: "Já respondi o suficiente. Não faça mais perguntas: chame agora a ferramenta entregar_raio_x com o que você sabe. Onde faltar número, use uma estimativa conservadora.",
       });
     }
     // Junta mensagens consecutivas do mesmo papel (a API não aceita repetição).
@@ -107,13 +111,15 @@ export async function onRequestPost({ request, env }) {
       else compactadas.push({ ...m });
     }
 
-    const data = await chamarClaude(env, {
-      system: promptDoSistema(perfil),
-      messages: compactadas,
-      tools: [FERRAMENTA_RAIO_X],
-      tool_choice: finalizar ? { type: "tool", name: "entregar_raio_x" } : { type: "auto" },
-    });
+    const corpo = { system: promptDoSistema(perfil), messages: compactadas, tools: [FERRAMENTA_RAIO_X] };
 
+    if (finalizar) {
+      const { uso } = await chamarComFerramenta(env, corpo, "entregar_raio_x");
+      if (!uso) throw new ErroHttp(502, "O agente não conseguiu emitir o laudo. Tente de novo.");
+      return json({ tipo: "relatorio", relatorio: uso.input });
+    }
+
+    const data = await chamarClaude(env, { ...corpo, tool_choice: { type: "auto" } });
     const usoDeFerramenta = data.content?.find((b) => b.type === "tool_use" && b.name === "entregar_raio_x");
     if (usoDeFerramenta) {
       return json({ tipo: "relatorio", relatorio: usoDeFerramenta.input });

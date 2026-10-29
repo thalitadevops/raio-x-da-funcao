@@ -8,10 +8,16 @@ import { onRequestPost as fluxo } from "../functions/api/fluxo.js";
 const env = { ANTHROPIC_API_KEY: "teste" };
 const req = (corpo) => new Request("http://x/api", { method: "POST", body: JSON.stringify(corpo) });
 
-function simularClaude(content) {
+// Simula a Claude API. Aceita uma resposta fixa ou uma lista (uma por chamada).
+function simularClaude(...respostas) {
   const chamadas = [];
   globalThis.fetch = async (url, opts) => {
-    chamadas.push({ url, corpo: JSON.parse(opts.body), headers: opts.headers });
+    const corpo = JSON.parse(opts.body);
+    chamadas.push({ url, corpo, headers: opts.headers });
+    if (corpo.tool_choice && corpo.tool_choice.type !== "auto") {
+      return new Response(JSON.stringify({ error: { message: 'tool_choice: type "tool" and "any" are not supported for this model.' } }), { status: 400 });
+    }
+    const content = respostas[Math.min(chamadas.length - 1, respostas.length - 1)];
     return new Response(JSON.stringify({ content }), { status: 200 });
   };
   return chamadas;
@@ -66,8 +72,11 @@ test("entrevista devolve relatório quando o modelo chama a ferramenta", async (
   assert.equal(data.relatorio.tarefas.length, 5);
 });
 
-test("finalizar força a ferramenta e não repete papel na conversa", async () => {
-  const chamadas = simularClaude([{ type: "tool_use", name: "entregar_raio_x", input: RELATORIO_DEMO }]);
+test("finalizar: nunca força tool_choice e insiste se o modelo responder em texto", async () => {
+  const chamadas = simularClaude(
+    [{ type: "text", text: "Só mais uma pergunta?" }],
+    [{ type: "tool_use", name: "entregar_raio_x", input: RELATORIO_DEMO }]
+  );
   await entrevista({
     request: req({
       perfil: { cargo: "Analista" },
@@ -75,10 +84,21 @@ test("finalizar força a ferramenta e não repete papel na conversa", async () =
       finalizar: true,
     }),
     env,
-  });
-  const { messages, tool_choice } = chamadas[0].corpo;
-  assert.deepEqual(tool_choice, { type: "tool", name: "entregar_raio_x" });
-  for (let i = 1; i < messages.length; i++) assert.notEqual(messages[i].role, messages[i - 1].role);
+  }).then(async (r) => assert.equal((await r.json()).tipo, "relatorio"));
+  assert.equal(chamadas.length, 2);
+  for (const c of chamadas) {
+    assert.deepEqual(c.corpo.tool_choice, { type: "auto" });
+    const m = c.corpo.messages;
+    for (let i = 1; i < m.length; i++) assert.notEqual(m[i].role, m[i - 1].role);
+  }
+});
+
+test("depois de 7 respostas o laudo sai sozinho", async () => {
+  simularClaude([{ type: "tool_use", name: "entregar_raio_x", input: RELATORIO_DEMO }]);
+  const mensagens = [];
+  for (let i = 0; i < 7; i++) mensagens.push({ role: "assistant", content: "P?" }, { role: "user", content: "R" });
+  const r = await entrevista({ request: req({ perfil: { cargo: "Analista" }, mensagens }), env });
+  assert.equal((await r.json()).tipo, "relatorio");
 });
 
 test("erros: sem cargo, sem chave", async () => {
@@ -93,7 +113,7 @@ test("fluxo devolve o plano da ferramenta", async () => {
   const chamadas = simularClaude([{ type: "tool_use", name: "montar_fluxo", input: plano }]);
   const r = await fluxo({ request: req({ perfil: { cargo: "Analista" }, tarefa: RELATORIO_DEMO.tarefas[1] }), env });
   assert.deepEqual((await r.json()).plano, plano);
-  assert.equal(chamadas[0].corpo.tool_choice.name, "montar_fluxo");
+  assert.deepEqual(chamadas[0].corpo.tool_choice, { type: "auto" });
 });
 
 test("todos os exemplos têm contas coerentes e fluxos que montam", async () => {
