@@ -3,6 +3,7 @@
 // O navegador transforma esse plano em um workflow importável no n8n (public/n8n.js).
 import { chamarComFerramenta, json, respostaDeErro, limitarTexto, ErroHttp } from "../../lib/anthropic.js";
 import { TIPOS_DE_GATILHO, TIPOS_DE_PASSO } from "../../public/n8n.js";
+import { validarPlano } from "../../lib/validacao.js";
 
 const FERRAMENTA_FLUXO = {
   name: "montar_fluxo",
@@ -64,7 +65,8 @@ const REGRAS = `Regras do fluxo (siga todas, porque o JSON do n8n é montado aut
 4. Depois de cada passo ia_claude, o sistema adiciona sozinho um nó que deixa no item: todos os campos de antes + resposta_ia (texto) + dados_ia (JSON interpretado). Os passos seguintes devem usar $json.resposta_ia ou $json.dados_ia.
 5. "extrair_arquivo" lê o arquivo anexado ao item: PDF vira texto em $json.text; planilhas viram um item por linha, com as colunas como campos.
 6. Para mandar um resumo único (e-mail, Slack), coloque antes um passo "juntar_itens": ele junta todos os itens em um só, com a lista em $json.itens.
-7. Passos "codigo" precisam de JavaScript funcional e completo no campo codigo, usando $input.all() e devolvendo uma lista de itens { json: {...} }. Nada de pseudocódigo.
+7. Passos "codigo" precisam de JavaScript funcional e completo no campo codigo, usando $input.all() e devolvendo uma lista de itens { json: {...} }. Nada de pseudocódigo. Mantenha cada código curto (até 25 linhas).
+10. O campo passos é uma lista de objetos (não um texto). Use no máximo 8 passos.
 8. Gatilho agendado sempre com cron. Gatilho novo_email já baixa os anexos do e-mail.
 9. Mantenha a parte humana no fluxo: rascunho para aprovação, linha marcada para revisão etc., em vez de enviar algo sozinho quando houver risco.`;
 
@@ -88,13 +90,14 @@ ${REGRAS}
 
 Escreva tudo em português do Brasil e responda chamando a ferramenta montar_fluxo.`;
 
-    const { uso } = await chamarComFerramenta(
+    const { entrada } = await chamarComFerramenta(
       env,
-      { messages: [{ role: "user", content: pedido }], tools: [FERRAMENTA_FLUXO], max_tokens: 8000 },
-      "montar_fluxo"
+      { messages: [{ role: "user", content: pedido }], tools: [FERRAMENTA_FLUXO], max_tokens: 16000 },
+      "montar_fluxo",
+      { validar: validarPlano }
     );
-    if (!uso) throw new ErroHttp(502, "O modelo não devolveu um fluxo. Tente de novo.");
-    return json({ plano: uso.input });
+    if (!entrada) throw new ErroHttp(502, "A IA não conseguiu montar um fluxo completo. Tente de novo.");
+    return json({ plano: entrada });
   } catch (err) {
     return respostaDeErro(err);
   }

@@ -2,6 +2,7 @@
 // Recebe o perfil e o histórico da conversa. Devolve a próxima pergunta
 // do agente ou, quando ele já tem informação suficiente, o Raio-X estruturado.
 import { chamarClaude, chamarComFerramenta, json, respostaDeErro, limitarTexto, ErroHttp } from "../../lib/anthropic.js";
+import { validarRelatorio } from "../../lib/validacao.js";
 
 const MAX_TURNOS = 24;
 // Depois de tantas respostas, o laudo é emitido mesmo que o agente queira perguntar mais.
@@ -113,16 +114,19 @@ export async function onRequestPost({ request, env }) {
 
     const corpo = { system: promptDoSistema(perfil), messages: compactadas, tools: [FERRAMENTA_RAIO_X] };
 
-    if (finalizar) {
-      const { uso } = await chamarComFerramenta(env, corpo, "entregar_raio_x");
-      if (!uso) throw new ErroHttp(502, "O agente não conseguiu emitir o laudo. Tente de novo.");
-      return json({ tipo: "relatorio", relatorio: uso.input });
-    }
+    const emitirLaudo = async () => {
+      const { entrada } = await chamarComFerramenta(env, { ...corpo, max_tokens: 8000 }, "entregar_raio_x", { validar: validarRelatorio });
+      if (!entrada) throw new ErroHttp(502, "O agente não conseguiu emitir o laudo. Tente de novo.");
+      return json({ tipo: "relatorio", relatorio: entrada });
+    };
+
+    if (finalizar) return emitirLaudo();
 
     const data = await chamarClaude(env, { ...corpo, tool_choice: { type: "auto" } });
     const usoDeFerramenta = data.content?.find((b) => b.type === "tool_use" && b.name === "entregar_raio_x");
     if (usoDeFerramenta) {
-      return json({ tipo: "relatorio", relatorio: usoDeFerramenta.input });
+      const r = validarRelatorio(usoDeFerramenta.input);
+      return r.ok ? json({ tipo: "relatorio", relatorio: r.valor }) : emitirLaudo();
     }
     const texto = data.content?.filter((b) => b.type === "text").map((b) => b.text).join("\n").trim();
     return json({ tipo: "pergunta", texto: texto || "Pode me contar um pouco mais?" });

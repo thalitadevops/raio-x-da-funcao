@@ -135,3 +135,44 @@ test("todos os exemplos têm contas coerentes e fluxos que montam", async () => 
     }
   }
 });
+
+test("fluxo: passos que chegam como texto JSON são consertados", async () => {
+  const plano = planoDemo(RELATORIO_DEMO.tarefas[1]);
+  simularClaude([{ type: "tool_use", id: "t1", name: "montar_fluxo", input: { ...plano, passos: JSON.stringify(plano.passos), gatilho: JSON.stringify(plano.gatilho) } }]);
+  const r = await fluxo({ request: req({ perfil: { cargo: "Analista" }, tarefa: RELATORIO_DEMO.tarefas[1] }), env });
+  const { plano: recebido } = await r.json();
+  assert.ok(Array.isArray(recebido.passos));
+  assert.equal(recebido.passos.length, plano.passos.length);
+  assert.equal(recebido.gatilho.tipo, plano.gatilho.tipo);
+});
+
+test("fluxo: plano sem passos (resposta cortada) é pedido de novo", async () => {
+  const plano = planoDemo(RELATORIO_DEMO.tarefas[1]);
+  const chamadas = simularClaude(
+    [{ type: "tool_use", id: "t1", name: "montar_fluxo", input: { nome_fluxo: "Cortado" } }],
+    [{ type: "tool_use", id: "t2", name: "montar_fluxo", input: plano }]
+  );
+  const r = await fluxo({ request: req({ perfil: { cargo: "Analista" }, tarefa: RELATORIO_DEMO.tarefas[1] }), env });
+  assert.equal(r.status, 200);
+  assert.equal((await r.json()).plano.passos.length, plano.passos.length);
+  const retorno = chamadas[1].corpo.messages.at(-1).content[0];
+  assert.equal(retorno.type, "tool_result");
+  assert.equal(retorno.tool_use_id, "t1");
+  assert.equal(retorno.is_error, true);
+});
+
+test("fluxo: se nunca vier completo, devolve erro claro (sem quebrar o navegador)", async () => {
+  simularClaude([{ type: "tool_use", id: "t1", name: "montar_fluxo", input: { nome_fluxo: "Cortado" } }]);
+  const r = await fluxo({ request: req({ perfil: { cargo: "Analista" }, tarefa: RELATORIO_DEMO.tarefas[1] }), env });
+  assert.equal(r.status, 502);
+  assert.match((await r.json()).erro, /fluxo completo/);
+});
+
+test("laudo: tarefas como texto JSON e números como texto são consertados", async () => {
+  const tarefas = RELATORIO_DEMO.tarefas.map((t) => ({ ...t, horas_por_semana: String(t.horas_por_semana) }));
+  simularClaude([{ type: "tool_use", id: "t1", name: "entregar_raio_x", input: { ...RELATORIO_DEMO, tarefas: JSON.stringify(tarefas) } }]);
+  const r = await entrevista({ request: req({ perfil: { cargo: "Analista" }, mensagens: [], finalizar: true }), env });
+  const { relatorio } = await r.json();
+  assert.equal(relatorio.tarefas.length, 5);
+  assert.equal(typeof relatorio.tarefas[0].horas_por_semana, "number");
+});
