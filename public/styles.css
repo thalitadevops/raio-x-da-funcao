@@ -192,12 +192,16 @@ h3 { font-size: 15px; font-weight: 700; font-stretch: 87%; color: var(--tinta-2)
 .receita-objetivo { color: var(--tinta-2); margin: 14px 0 8px; }
 .prescricao { list-style: none; padding: 0; margin: 10px 0 0; counter-reset: p; }
 .prescricao li { border-bottom: 1px dashed var(--linha); display: grid; grid-template-columns: 34px 1fr; gap: 2px 8px; padding: 10px 0; }
-.prescricao li::before { counter-increment: p; content: counter(p) "."; grid-row: span 3; font-weight: 800; font-stretch: 70%; font-size: 22px; line-height: 1.1; }
+.prescricao li::before { counter-increment: p; content: counter(p) "."; grid-column: 1; grid-row: 1 / span 6; font-weight: 800; font-stretch: 70%; font-size: 22px; line-height: 1.1; }
 .prescricao li.gatilho::before { counter-increment: none; content: "0."; color: var(--tinta-2); }
 .prescricao strong { font-weight: 700; font-stretch: 92%; }
 .prescricao .tipo { font-size: 13px; color: var(--tinta-2); margin-left: 6px; font-weight: 400; }
 .prescricao .faz { margin: 0; }
 .prescricao .config { font-family: var(--mao); font-size: 21px; line-height: 1.25; color: var(--caneta); white-space: pre-line; margin: 2px 0 0; }
+.prescricao .ajuste { margin: 6px 0 0; font-size: 14px; color: var(--tinta-2); }
+.prescricao .ajuste b { color: var(--tinta); font-weight: 600; }
+.prescricao li > * { grid-column: 2; }
+.prescricao .codigo-passo { margin: 6px 0 0; color: var(--tinta); background: #eef3f0; max-height: 220px; border-left: 3px solid var(--linha); padding: 8px 10px; font-size: 12px; overflow-x: auto; white-space: pre; }
 .receita-rodape { margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--linha); background: var(--folha); }
 .receita-rodape p { margin: 0 0 4px; font-size: 15px; }
 .receita details { margin-top: 12px; font-size: 14px; }

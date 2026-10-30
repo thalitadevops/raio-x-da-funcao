@@ -338,6 +338,7 @@ const NOME_TIPO = {
   agendado: "agendado", webhook: "webhook", manual: "manual", novo_email: "novo e-mail",
   ia_claude: "IA (Claude)", google_sheets: "Google Sheets", gmail: "Gmail", slack: "Slack",
   http: "requisição HTTP", codigo: "código", condicao: "condição", definir_campos: "campos", whatsapp: "WhatsApp",
+  extrair_arquivo: "ler arquivo", juntar_itens: "juntar itens",
 };
 
 async function abrirFluxo(tarefa) {
@@ -368,9 +369,11 @@ function mostrarFluxo(plano) {
     `<li class="gatilho"><strong>Quando rodar<span class="tipo">${escapar(NOME_TIPO[plano.gatilho.tipo] || plano.gatilho.tipo)}</span></strong>
       <p class="faz">${escapar(plano.gatilho.detalhe)}</p></li>`,
     ...plano.passos.map(
-      (p) => `<li><strong>${escapar(p.nome)}<span class="tipo">${escapar(NOME_TIPO[p.tipo] || p.tipo)}</span></strong>
+      (p) => `<li><strong>${escapar(p.nome)}<span class="tipo">${escapar(NOME_TIPO[p.tipo] || p.tipo)}${p.imagem ? ", vê a imagem" : ""}</span></strong>
         <p class="faz">${escapar(p.o_que_faz)}</p>
-        <p class="config">${escapar(p.configuracao)}</p></li>`
+        ${p.prompt ? `<p class="config">${escapar(p.prompt)}</p>` : ""}
+        ${p.codigo ? `<pre class="codigo-passo">${escapar(p.codigo)}</pre>` : ""}
+        ${p.configuracao && !/^nada a configurar/i.test(p.configuracao) ? `<p class="ajuste"><b>Você configura:</b> ${escapar(p.configuracao)}</p>` : ""}</li>`
     ),
   ].join("");
 

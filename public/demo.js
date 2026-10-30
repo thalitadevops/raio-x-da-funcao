@@ -97,12 +97,12 @@ export function planoDemo(tarefa) {
     return {
       nome_fluxo: "Chamados fechados → planilha de casos",
       objetivo: "Registrar automaticamente cada chamado fechado no Zendesk na planilha de casos, com o motivo classificado pela IA.",
-      gatilho: { tipo: "agendado", detalhe: "a cada 30 minutos, em horário comercial" },
+      gatilho: { tipo: "agendado", detalhe: "a cada 30 minutos, das 8h às 18h, em dias úteis", cron: "*/30 8-18 * * 1-5" },
       passos: [
-        { tipo: "http", nome: "Buscar chamados fechados", o_que_faz: "Busca no Zendesk os chamados fechados nos últimos 30 minutos.", configuracao: "GET https://SUA_EMPRESA.zendesk.com/api/v2/search.json?query=status:solved updated>30minutes, com credencial do Zendesk." },
-        { tipo: "codigo", nome: "Separar um item por chamado", o_que_faz: "Transforma a lista em um item por chamado.", configuracao: "return $json.results.map(c => ({ json: { id: c.id, assunto: c.subject, texto: c.description, restaurante: c.organization_id } }));" },
-        { tipo: "ia_claude", nome: "Classificar motivo", o_que_faz: "Lê o chamado e devolve o motivo em uma categoria fixa.", configuracao: "Classifique o chamado abaixo em UMA categoria: repasse, cardapio, pedido_cancelado, cadastro, outro. Responda só com a categoria.\n\nAssunto: {{ $json.assunto }}\nTexto: {{ $json.texto }}" },
-        { tipo: "google_sheets", nome: "Gravar na planilha", o_que_faz: "Adiciona uma linha na planilha de casos.", configuracao: "Operação: Append row. Colunas: data, id do chamado, restaurante, motivo (saída da IA), status = resolvido." },
+        { tipo: "http", nome: "Buscar chamados fechados", o_que_faz: "Busca no Zendesk os chamados resolvidos nos últimos 30 minutos.", configuracao: "Método GET em https://SUA_EMPRESA.zendesk.com/api/v2/search.json, parâmetro query = type:ticket status:solved updated>30minutes. Autenticação: credencial do Zendesk (e-mail/token)." },
+        { tipo: "codigo", nome: "Um item por chamado", o_que_faz: "Transforma a lista do Zendesk em um item por chamado.", configuracao: "Nada a configurar.", codigo: "const resultados = $input.first().json.results || [];\nreturn resultados.map((c) => ({\n  json: { id: c.id, assunto: c.subject || \"\", texto: c.description || \"\", restaurante: c.organization_id || \"\", data: (c.updated_at || \"\").slice(0, 10) },\n}));" },
+        { tipo: "ia_claude", nome: "Classificar motivo", o_que_faz: "Lê o chamado e devolve o motivo em uma categoria fixa.", configuracao: "Troque a chave da API.", prompt: "Classifique o chamado de um restaurante parceiro em UMA categoria: repasse, cardapio, pedido_cancelado, cadastro ou outro. Responda só com a categoria, em minúsculas.\n\nAssunto: {{ $json.assunto }}\nTexto: {{ $json.texto }}" },
+        { tipo: "google_sheets", nome: "Gravar na planilha", o_que_faz: "Adiciona uma linha por chamado na planilha de casos.", configuracao: "Operação Append Row na planilha de casos, aba Casos. Colunas: Data = {{ $json.data }}, Chamado = {{ $json.id }}, Restaurante = {{ $json.restaurante }}, Motivo = {{ $json.resposta_ia }}, Status = resolvido." },
       ],
       como_testar: "Feche um chamado de teste no Zendesk, rode o fluxo manualmente e confira se a linha apareceu na planilha com o motivo certo.",
       horas_economizadas_semana: 4,
@@ -112,31 +112,37 @@ export function planoDemo(tarefa) {
     return {
       nome_fluxo: "Rascunho automático para dúvidas de repasse",
       objetivo: "Quando chega um chamado novo, a IA verifica se é dúvida de repasse e deixa a resposta pronta no chamado para você revisar e enviar.",
-      gatilho: { tipo: "webhook", detalhe: "o Zendesk avisa o n8n a cada chamado novo" },
+      gatilho: { tipo: "webhook", detalhe: "o Zendesk avisa o n8n a cada chamado novo (gatilho do Zendesk enviando id, assunto, texto e restaurante)" },
       passos: [
-        { tipo: "ia_claude", nome: "Classificar chamado", o_que_faz: "Diz se o chamado é dúvida de repasse.", configuracao: "Este chamado de um restaurante parceiro é uma dúvida sobre repasse (pagamento, valor, data, desconto)? Responda só SIM ou NAO.\n\nAssunto: {{ $json.body.assunto }}\nTexto: {{ $json.body.texto }}" },
-        { tipo: "condicao", nome: "É repasse?", o_que_faz: "Segue só se a IA respondeu SIM.", configuracao: "Condição: o texto da resposta da IA contém SIM." },
-        { tipo: "google_sheets", nome: "Buscar dados do restaurante", o_que_faz: "Pega o calendário e os valores de repasse do restaurante.", configuracao: "Operação: Get rows na planilha de repasses, filtrando pelo ID do restaurante do chamado." },
-        { tipo: "ia_claude", nome: "Escrever resposta", o_que_faz: "Escreve a resposta usando os dados reais do restaurante.", configuracao: "Você é analista de atendimento a restaurantes parceiros. Responda a dúvida de repasse abaixo de forma cordial e objetiva, usando SOMENTE os dados fornecidos. Se faltar dado, diga que vai verificar.\n\nDúvida: {{ $('Gatilho').item.json.body.texto }}\nDados do restaurante: {{ JSON.stringify($json) }}" },
-        { tipo: "http", nome: "Salvar como nota interna", o_que_faz: "Grava a resposta como nota interna no chamado, sem enviar ao cliente.", configuracao: "PUT https://SUA_EMPRESA.zendesk.com/api/v2/tickets/{id}.json com comment.public = false e o texto da IA. Você revisa e publica." },
+        { tipo: "codigo", nome: "Ler dados do chamado", o_que_faz: "Pega do aviso do Zendesk os campos que o fluxo usa.", configuracao: "Nada a configurar.", codigo: "return $input.all().map((i) => ({\n  json: { id: i.json.body.id, assunto: i.json.body.assunto || \"\", texto: i.json.body.texto || \"\", restaurante: String(i.json.body.restaurante || \"\") },\n}));" },
+        { tipo: "ia_claude", nome: "Classificar chamado", o_que_faz: "Diz se o chamado é dúvida de repasse.", configuracao: "Troque a chave da API.", prompt: "Este chamado de um restaurante parceiro é uma dúvida sobre repasse (pagamento, valor, data, desconto)? Responda só SIM ou NAO.\n\nAssunto: {{ $json.assunto }}\nTexto: {{ $json.texto }}" },
+        { tipo: "codigo", nome: "Seguir só se for repasse", o_que_faz: "Deixa passar apenas os chamados classificados como repasse.", configuracao: "Nada a configurar.", codigo: "return $input.all().filter((i) => /^SIM/i.test(i.json.resposta_ia));" },
+        { tipo: "google_sheets", nome: "Buscar dados do restaurante", o_que_faz: "Pega o calendário e os valores de repasse do restaurante.", configuracao: "Operação Get Row(s) na planilha de repasses, filtrando a coluna Restaurante pelo valor {{ $json.restaurante }}." },
+        { tipo: "ia_claude", nome: "Escrever resposta", o_que_faz: "Escreve a resposta usando os dados reais do restaurante.", configuracao: "Troque a chave da API.", prompt: "Você é analista de atendimento a restaurantes parceiros. Responda à dúvida de repasse abaixo de forma cordial e objetiva, em até 5 frases, usando SOMENTE os dados fornecidos. Se faltar algum dado, diga que vai verificar.\n\nDúvida: {{ $('Ler dados do chamado').item.json.texto }}\nDados de repasse do restaurante: {{ JSON.stringify($json) }}" },
+        { tipo: "http", nome: "Salvar como nota interna", o_que_faz: "Grava a resposta como nota interna no chamado, sem enviar ao restaurante.", configuracao: "Método PUT em https://SUA_EMPRESA.zendesk.com/api/v2/tickets/{{ $('Ler dados do chamado').item.json.id }}.json com corpo JSON { \"ticket\": { \"comment\": { \"body\": resposta_ia, \"public\": false } } }. Você revisa e publica." },
       ],
-      como_testar: "Abra um chamado de teste perguntando sobre a data do repasse e confira se a nota interna aparece em menos de 1 minuto.",
+      como_testar: "Abra um chamado de teste perguntando a data do repasse e confira se a nota interna aparece em menos de 1 minuto.",
       horas_economizadas_semana: 5.3,
     };
   }
-  // Plano genérico para as demais tarefas da demonstração.
-  const usaSlack = tarefa.ferramentas_sugeridas.includes("Slack");
-  const usaGmail = tarefa.ferramentas_sugeridas.includes("Gmail");
+  // Plano genérico para as demais tarefas dos exemplos.
+  const usaGmail = (tarefa.ferramentas_sugeridas || []).includes("Gmail");
+  const semanal = tarefa.frequencia === "semanal";
   return {
     nome_fluxo: tarefa.nome,
     objetivo: tarefa.como_automatizar,
-    gatilho: { tipo: "agendado", detalhe: tarefa.frequencia === "semanal" ? "toda segunda às 8h" : "todo dia às 17h" },
+    gatilho: semanal
+      ? { tipo: "agendado", detalhe: "toda segunda às 8h", cron: "0 8 * * 1" }
+      : { tipo: "agendado", detalhe: "dias úteis às 17h", cron: "0 17 * * 1-5" },
     passos: [
-      { tipo: "google_sheets", nome: "Ler dados do período", o_que_faz: "Lê os registros do período na planilha.", configuracao: "Operação: Get rows, filtrando pela data do período." },
-      { tipo: "ia_claude", nome: "Escrever rascunho", o_que_faz: "A IA escreve o rascunho a partir dos dados.", configuracao: `Você ajuda um profissional a ganhar tempo. Com base nos dados abaixo, escreva o rascunho para a tarefa "${tarefa.nome}". Seja objetivo e cordial.\n\nDados: {{ JSON.stringify($json) }}` },
-      { tipo: usaSlack ? "slack" : usaGmail ? "gmail" : "slack", nome: "Enviar para aprovação", o_que_faz: "Manda o rascunho para você revisar antes de seguir.", configuracao: usaGmail ? "Criar rascunho no Gmail (não enviar)." : "Mensagem direta para você no Slack com o rascunho." },
+      { tipo: "google_sheets", nome: "Ler registros do período", o_que_faz: "Lê os registros do período na planilha.", configuracao: "Operação Get Row(s) na planilha de registros, filtrando pela data do período." },
+      { tipo: "juntar_itens", nome: "Juntar registros", o_que_faz: "Junta todas as linhas em um item só, para a IA ler de uma vez.", configuracao: "Nada a configurar." },
+      { tipo: "ia_claude", nome: "Escrever rascunho", o_que_faz: "A IA escreve o rascunho a partir dos dados.", configuracao: "Troque a chave da API.", prompt: `Você ajuda um profissional a ganhar tempo. Com base nos registros abaixo, escreva o rascunho para a tarefa "${tarefa.nome}". Seja objetivo e cordial e use só os dados fornecidos.\n\nRegistros: {{ JSON.stringify($json.itens) }}` },
+      usaGmail
+        ? { tipo: "gmail", nome: "Criar rascunho de e-mail", o_que_faz: "Deixa o texto como rascunho no Gmail para você revisar.", configuracao: "Operação Create Draft. Assunto à sua escolha; corpo = {{ $json.resposta_ia }}." }
+        : { tipo: "slack", nome: "Enviar para aprovação", o_que_faz: "Manda o rascunho no seu Slack para você revisar.", configuracao: "Operação Send Message, mensagem direta para você; texto = {{ $json.resposta_ia }}." },
     ],
-    como_testar: "Rode o fluxo manualmente com a planilha de exemplo e confira o rascunho recebido.",
+    como_testar: "Rode o fluxo manualmente com uma planilha de exemplo de 3 linhas e confira o rascunho recebido.",
     horas_economizadas_semana: Math.round(tarefa.horas_por_semana * tarefa.percentual_automatizavel) / 100,
   };
 }
@@ -240,17 +246,18 @@ const RELATORIO_LOGISTICA = {
 const PLANOS_LOGISTICA = {
   "Responder dúvidas de entregadores": {
     nome_fluxo: "Resposta automática para dúvidas de entregadores",
-    objetivo: "Responder na hora as perguntas frequentes dos entregadores no WhatsApp e mandar para a fila humana só o que precisa de análise.",
-    gatilho: { tipo: "webhook", detalhe: "o WhatsApp Business avisa o n8n a cada mensagem nova" },
+    objetivo: "Responder na hora as dúvidas de pagamento dos entregadores no WhatsApp e deixar o resto para a fila humana.",
+    gatilho: { tipo: "webhook", detalhe: "o WhatsApp Business avisa o n8n a cada mensagem nova (telefone e texto)" },
     passos: [
-      { tipo: "ia_claude", nome: "Classificar mensagem", o_que_faz: "Diz se é dúvida de pagamento, bloqueio ou outro assunto.", configuracao: "Classifique a mensagem de um entregador em UMA categoria: pagamento, bloqueio, outro. Responda só com a categoria.\n\nMensagem: {{ $json.body.texto }}" },
-      { tipo: "condicao", nome: "É sobre pagamento?", o_que_faz: "Segue no fluxo automático só se for pagamento.", configuracao: "Condição: a categoria é igual a pagamento. As demais vão para a fila de atendimento humano." },
-      { tipo: "google_sheets", nome: "Buscar calendário de pagamento", o_que_faz: "Pega a data e o valor previsto do repasse do entregador.", configuracao: "Operação: Get rows na planilha de pagamentos, filtrando pelo telefone do entregador." },
-      { tipo: "ia_claude", nome: "Escrever resposta", o_que_faz: "Escreve uma resposta curta e cordial com os dados reais.", configuracao: "Você é do suporte a entregadores. Responda em até 3 frases, de forma simples e cordial, usando SOMENTE estes dados. Se faltar dado, diga que um atendente vai verificar.\n\nPergunta: {{ $('Gatilho').item.json.body.texto }}\nDados: {{ JSON.stringify($json) }}" },
-      { tipo: "whatsapp", nome: "Enviar resposta", o_que_faz: "Manda a resposta para o entregador.", configuracao: "POST na API do WhatsApp Business com o número do entregador e o texto gerado." },
-      { tipo: "google_sheets", nome: "Registrar atendimento", o_que_faz: "Guarda o que foi respondido, para você auditar.", configuracao: "Operação: Append row com data, telefone, pergunta, resposta enviada." },
+      { tipo: "codigo", nome: "Ler mensagem", o_que_faz: "Pega o telefone e o texto da mensagem recebida.", configuracao: "Confira os nomes dos campos que o seu provedor de WhatsApp envia e ajuste no código se forem diferentes.", codigo: "return $input.all().map((i) => ({\n  json: { telefone: String(i.json.body.telefone || \"\"), texto: i.json.body.texto || \"\" },\n}));" },
+      { tipo: "ia_claude", nome: "Classificar mensagem", o_que_faz: "Diz se é dúvida de pagamento, bloqueio ou outro assunto.", configuracao: "Troque a chave da API.", prompt: "Classifique a mensagem de um entregador em UMA categoria: pagamento, bloqueio ou outro. Responda só com a categoria, em minúsculas.\n\nMensagem: {{ $json.texto }}" },
+      { tipo: "codigo", nome: "Seguir só se for pagamento", o_que_faz: "Deixa passar só as dúvidas de pagamento; as outras ficam para a fila humana.", configuracao: "Nada a configurar.", codigo: "return $input.all().filter((i) => i.json.resposta_ia.trim().toLowerCase().startsWith(\"pagamento\"));" },
+      { tipo: "google_sheets", nome: "Buscar calendário de pagamento", o_que_faz: "Pega a data e o valor previsto do repasse do entregador.", configuracao: "Operação Get Row(s) na planilha de pagamentos, filtrando a coluna Telefone por {{ $json.telefone }}." },
+      { tipo: "ia_claude", nome: "Escrever resposta", o_que_faz: "Escreve uma resposta curta e cordial com os dados reais.", configuracao: "Troque a chave da API.", prompt: "Você é do suporte a entregadores. Responda em até 3 frases, de forma simples e cordial, usando SOMENTE estes dados. Se faltar algum dado, diga que um atendente vai verificar.\n\nPergunta: {{ $('Ler mensagem').item.json.texto }}\nDados do pagamento: {{ JSON.stringify($json) }}" },
+      { tipo: "whatsapp", nome: "Enviar resposta", o_que_faz: "Manda a resposta para o entregador.", configuracao: "POST na API do seu provedor de WhatsApp Business, com o número {{ $('Ler mensagem').item.json.telefone }} e o texto {{ $json.resposta_ia }}." },
+      { tipo: "google_sheets", nome: "Registrar atendimento", o_que_faz: "Guarda o que foi respondido, para você auditar.", configuracao: "Operação Append Row na aba Atendimentos: data, telefone, pergunta e resposta enviada." },
     ],
-    como_testar: "Mande do seu celular para o número de teste a pergunta 'quando cai meu pagamento?' e confira se a resposta chega em menos de 1 minuto e aparece na planilha.",
+    como_testar: "Mande do seu celular para o número de teste 'quando cai meu pagamento?' e confira se a resposta chega em menos de 1 minuto e aparece na planilha.",
     horas_economizadas_semana: 7,
   },
 };
@@ -354,16 +361,17 @@ const RELATORIO_COMERCIAL = {
 const PLANOS_COMERCIAL = {
   "Digitar cardápios de novos parceiros": {
     nome_fluxo: "Cardápio por foto",
-    objetivo: "Transformar a foto do cardápio de papel em uma planilha pronta para o cadastro, com descrições melhores.",
-    gatilho: { tipo: "novo_email", detalhe: "chega um e-mail com a foto do cardápio" },
+    objetivo: "Transformar a foto do cardápio de papel em linhas prontas para o cadastro, com descrições melhores.",
+    gatilho: { tipo: "novo_email", detalhe: "chega um e-mail com a foto do cardápio anexada" },
     passos: [
-      { tipo: "codigo", nome: "Preparar imagens", o_que_faz: "Converte as fotos anexadas para o formato que a IA lê.", configuracao: "Para cada anexo de imagem, gere o base64 e o tipo (image/jpeg ou image/png)." },
-      { tipo: "ia_claude", nome: "Ler o cardápio", o_que_faz: "Extrai todos os itens da foto em formato estruturado.", configuracao: "Envie a imagem como bloco do tipo image. Prompt: Extraia todos os itens deste cardápio. Responda em JSON: lista de objetos com categoria, nome, preco (número) e descricao_original. Não invente itens nem preços." },
-      { tipo: "ia_claude", nome: "Melhorar descrições", o_que_faz: "Escreve descrições curtas e apetitosas para cada item.", configuracao: "Para cada item, escreva uma descrição de até 20 palavras, apetitosa e fiel aos ingredientes. Não mude nome nem preço. Devolva o mesmo JSON com o campo descricao_nova." },
-      { tipo: "google_sheets", nome: "Criar planilha do cardápio", o_que_faz: "Grava os itens no modelo de cadastro.", configuracao: "Operação: Append rows na planilha modelo de cardápio, uma linha por item." },
-      { tipo: "gmail", nome: "Enviar para conferência", o_que_faz: "Manda a planilha para você e o dono conferirem os preços.", configuracao: "Criar rascunho de e-mail para o dono com o link da planilha, pedindo confirmação dos preços." },
+      { tipo: "ia_claude", nome: "Ler o cardápio", o_que_faz: "A IA olha a foto e extrai todos os itens.", configuracao: "Troque a chave da API.", imagem: true, responde_json: true, prompt: "Extraia todos os itens deste cardápio. Responda SOMENTE com JSON no formato {\"itens\": [{\"categoria\": \"\", \"nome\": \"\", \"preco\": 0.0, \"descricao_original\": \"\"}]}. Preço como número com ponto decimal. Não invente itens nem preços; se algo estiver ilegível, deixe o campo vazio." },
+      { tipo: "codigo", nome: "Um item por prato", o_que_faz: "Transforma a lista da IA em uma linha por prato.", configuracao: "Nada a configurar.", codigo: "const saida = [];\nfor (const i of $input.all()) {\n  const itens = (i.json.dados_ia && i.json.dados_ia.itens) || [];\n  for (const p of itens) saida.push({ json: { ...p, remetente: i.json.from?.text || \"\" } });\n}\nreturn saida;" },
+      { tipo: "ia_claude", nome: "Melhorar descrição", o_que_faz: "Escreve uma descrição curta e apetitosa para cada prato.", configuracao: "Troque a chave da API.", prompt: "Escreva uma descrição de até 20 palavras, apetitosa e fiel aos ingredientes, para este prato de delivery. Não mude o nome nem invente ingredientes. Responda só com a descrição.\n\nPrato: {{ $json.nome }}\nDescrição original: {{ $json.descricao_original }}" },
+      { tipo: "google_sheets", nome: "Gravar no modelo de cadastro", o_que_faz: "Grava os pratos na planilha modelo de cardápio.", configuracao: "Operação Append Row na planilha modelo, aba Cardápio. Colunas: Categoria, Nome, Preço = {{ $json.preco }}, Descrição = {{ $json.resposta_ia }}." },
+      { tipo: "juntar_itens", nome: "Juntar pratos", o_que_faz: "Junta tudo para mandar um aviso só.", configuracao: "Nada a configurar." },
+      { tipo: "gmail", nome: "Pedir conferência", o_que_faz: "Cria um rascunho para o dono conferir os preços.", configuracao: "Operação Create Draft para o e-mail do restaurante. Corpo: 'Cadastramos {{ $json.itens.length }} pratos. Pode conferir os preços na planilha?' + link da planilha." },
     ],
-    como_testar: "Mande para o e-mail do fluxo a foto de um cardápio real e compare os preços da planilha com a foto, item por item.",
+    como_testar: "Mande para a caixa do fluxo a foto de um cardápio real e compare os preços da planilha com a foto, item por item.",
     horas_economizadas_semana: 5.1,
   },
 };

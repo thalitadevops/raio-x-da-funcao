@@ -47,13 +47,14 @@ test("workflow: tipos desconhecidos e nomes repetidos não quebram", () => {
     gatilho: { tipo: "inexistente", detalhe: "agora" },
     passos: [
       { tipo: "foo", nome: "A", o_que_faz: "1", configuracao: "1" },
-      { tipo: "ia_claude", nome: "A", o_que_faz: "2", configuracao: "Resuma {{ $json.texto }}" },
+      { tipo: "ia_claude", nome: "A", o_que_faz: "2", configuracao: "x", prompt: "Resuma {{ $json.texto }}" },
     ],
   });
   assert.equal(wf.nodes[0].type, "n8n-nodes-base.manualTrigger");
   assert.deepEqual(wf.nodes.slice(1, 3).map((n) => n.name), ["A", "A 2"]);
   const ia = wf.nodes[2];
-  assert.equal(JSON.parse(ia.parameters.jsonBody).messages[0].content, "Resuma {{ $json.texto }}");
+  const corpo = new Function("$json", `return (${ia.parameters.jsonBody.slice(3, -2)});`)({ texto: "abc" });
+  assert.equal(JSON.parse(corpo).messages[0].content, "Resuma abc");
 });
 
 test("entrevista devolve pergunta quando o modelo responde em texto", async () => {
